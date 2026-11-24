@@ -1,0 +1,25 @@
+{
+  "tfidf_word_lr": {
+    "macro_f1": 0.7545123453419352
+  },
+  "tfidf_char_lr": {
+    "macro_f1": 0.7507202047026534
+  },
+  "rubert_tiny2": {
+    "macro_f1": 0.7572029696548368
+  },
+  "best_blend": {
+    "macro_f1": 0.7709532234684996,
+    "accuracy": 0.7686666666666667,
+    "weights": {
+      "rubert": 0.44999999999999996,
+      "word": 0.45,
+      "char": 0.10000000000000003
+    }
+  },
+  "vs_smetanin_2019": 0.06095322346849963,
+  "vs_zmitrovich_2023": -0.05904677653150037,
+  "beats_smetanin": true,
+  "beats_zmitrovich": false,
+  "runtime_s": 87.95723247528076
+}
