@@ -1,0 +1,17 @@
+torch>=2.2
+transformers>=4.44
+datasets>=2.20
+accelerate>=0.33
+scikit-learn>=1.4
+xgboost>=2.0
+lightgbm>=4.3
+pandas>=2.2
+numpy>=1.26
+matplotlib>=3.8
+seaborn>=0.13
+tqdm>=4.66
+nltk>=3.9
+spacy>=3.7
+textstat>=0.7
+sentencepiece>=0.2
+jupyterlab>=4.0

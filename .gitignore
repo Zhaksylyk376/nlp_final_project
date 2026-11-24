@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+data/raw/
+data/cache/
+results/models/
+*.pt
+*.bin
+.DS_Store
+catboost_info/
+results/*.npy
+results/catboost_val_idx.npy

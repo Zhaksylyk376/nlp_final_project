@@ -1,0 +1,63 @@
+{
+  "LR_argmax": {
+    "name": "LR    (argmax)",
+    "acc": 0.6133,
+    "macro_f1": 0.4563,
+    "qwk": 0.7309,
+    "mae": 0.5272
+  },
+  "LR_eround": {
+    "name": "LR    (E-round)",
+    "acc": 0.5566,
+    "macro_f1": 0.4591,
+    "qwk": 0.7489,
+    "mae": 0.5332
+  },
+  "LGBM_argmax": {
+    "name": "LGBM  (argmax)",
+    "acc": 0.6339,
+    "macro_f1": 0.452,
+    "qwk": 0.6954,
+    "mae": 0.5295
+  },
+  "LGBM_eround": {
+    "name": "LGBM  (E-round)",
+    "acc": 0.5839,
+    "macro_f1": 0.4509,
+    "qwk": 0.7234,
+    "mae": 0.5213
+  },
+  "XGB_argmax": {
+    "name": "XGB   (argmax)",
+    "acc": 0.6493,
+    "macro_f1": 0.442,
+    "qwk": 0.6783,
+    "mae": 0.5272
+  },
+  "XGB_eround": {
+    "name": "XGB   (E-round)",
+    "acc": 0.5905,
+    "macro_f1": 0.4198,
+    "qwk": 0.7137,
+    "mae": 0.5114
+  },
+  "BLEND_argmax": {
+    "name": "BLEND (argmax)",
+    "acc": 0.661,
+    "macro_f1": 0.4588,
+    "qwk": 0.7077,
+    "mae": 0.4989
+  },
+  "BLEND_eround": {
+    "name": "BLEND (E-round)",
+    "acc": 0.588,
+    "macro_f1": 0.4284,
+    "qwk": 0.7326,
+    "mae": 0.5011
+  },
+  "blend_weights": {
+    "LR": 0.2,
+    "LGBM": 0.0,
+    "XGB": 0.8
+  }
+}

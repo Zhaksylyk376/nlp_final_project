@@ -1,0 +1,16 @@
+{
+  "names": [
+    "catboost",
+    "rubert_v1",
+    "tfidf_lr"
+  ],
+  "blend_weights": [
+    0.5877288098236447,
+    0.07059604061441722,
+    0.34167514956193806
+  ],
+  "blend_plain_val_wF1": 0.6450852960541592,
+  "blend_biased_val_wF1": 0.6560504007543725,
+  "meta_lr_val_wF1": 0.6551610826946377,
+  "best_head": "blend_bias"
+}

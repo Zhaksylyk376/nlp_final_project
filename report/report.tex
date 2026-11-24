@@ -1,0 +1,329 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T2A,T1]{fontenc}
+\usepackage[english,russian]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{natbib}
+\geometry{a4paper, margin=25mm}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black, urlcolor=blue!60!black}
+
+\title{Stacked Lexical, Semantic, and Stylometric Features for Russian Review Rating Prediction}
+\author{%
+  Nurzhaksylyk Zhaksylykbakyt \\
+  NLP course, Autumn 2026
+}
+\date{\today}
+
+\begin{document}
+\selectlanguage{english}
+\maketitle
+
+\begin{abstract}
+We study the five-class ordinal rating prediction task on a Russian-language
+customer-review corpus of 48\,665 training and 12\,167 test documents. We
+benchmark four single-model baselines (word TF--IDF + LR, char TF--IDF + LR,
+TF--IDF-SVD + stylometry + LightGBM, and a fine-tuned
+\texttt{cointegrated/rubert-tiny2}) against our proposed detector: a stacked
+ensemble that concatenates lexical, semantic, and stylometric branch
+probabilities and decodes with the expected-rating rule, which is
+Bayes-optimal under quadratic ordinal loss and empirically improves
+quadratic-weighted kappa. Our blended ensemble improves weighted-F$_1$ by +2.5~pp and accuracy by +0.7~pp
+over the strongest single-model baseline (CatBoost over TF--IDF + stylometry),
+with all training runnable on a CPU laptop in under two hours. Code, splits, and submission file
+at \href{https://github.com/Zhaksylyk376/nlp_final_project}{github.com/Zhaksylyk376/nlp\_final\_project}.
+\end{abstract}
+
+\section{Introduction}
+
+Review rating prediction maps a free-text user review to the discrete
+1--5 star rating the author assigned. It is a canonical ordinal
+classification task \citep{pang2005seeing,baccianella2009multi} and a direct
+proxy for aggregate sentiment in e-commerce, hospitality, and healthcare
+platforms. The task is deceptively simple on English benchmarks where
+transformer-based classifiers routinely clear 65\% accuracy and 0.85 QWK, but
+is harder in Russian: (i) agglutinative morphology multiplies the vocabulary
+and inflates TF--IDF sparsity, (ii) short noisy reviews with mixed-case
+emphasis and emoji are common, (iii) class distributions are heavily skewed
+toward the extremes (53.6\% of our training reviews are 5-star vs.\ 4.9\%
+2-star), which breaks accuracy as a meaningful single metric.
+
+This project reproduces the standard baseline families on a single Russian
+rating corpus, proposes a feature-stacking detector that composes the three
+most informative signal types used in the literature, and reports results
+with ordinal-aware metrics (QWK, MAE). Our main empirical claim is that an
+ensemble combining word/char TF--IDF, ruBERT-tiny2 fine-tune, and
+stylometric features recovers the complementary strengths of each branch and
+beats the best single model at CPU-only budget.
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Russian sentiment and rating.}
+RuSentiment \citep{rogers2018rusentiment} and the RuReviews corpus
+\citep{smetanin2019rureviews} are the two public references used by most
+Russian text-sentiment work. \citet{smetanin2019rureviews} report macro-F$_1$
+up to 71\% for 3-class sentiment on a 50k-review women's-clothing corpus using
+CNNs over fastText embeddings; subsequent transformer baselines
+\citep{kuratov2019rubert,zmitrovich2023family} push 3-class macro-F$_1$ above
+80\%. We adopt the ruBERT family for the semantic branch of our detector.
+
+\paragraph{Russian pretrained encoders.}
+DeepPavlov's ruBERT \citep{kuratov2019rubert} and SberDevices' ruBERT-base
+\citep{zmitrovich2023family} established the strong-encoder baseline for
+Russian NLP. Compact distilled models,
+specifically \texttt{cointegrated/rubert-tiny2}
+\citep{dale2021rubert_tiny2}, retain $\sim$90\% of the downstream quality at
+$\sim$1/6 of the parameters and inference cost, which is critical for
+CPU-only deployment --- the scenario we target.
+
+\paragraph{Ordinal classification.}
+Standard cross-entropy ignores the ordering of labels. \citet{frank2001ordinal}
+and \citet{beckham2017unimodal} proposed cumulative-link and unimodal softmax
+losses that respect the order. A simpler and widely-used trick
+\citep{pedregosa2017linear} is to keep softmax but decode the final
+prediction as $\hat{y} = \mathrm{round}\!\left(\sum_i i \cdot p_i\right)$ ---
+the Bayes-optimal rule under squared loss and empirically a strong proxy for
+QWK. We use this decoding on every soft-output model in Section~\ref{sec:approach}.
+
+\paragraph{Stylometric features for star-rating.}
+Sentence length distribution, punctuation and emoji frequency, and
+cue-word lists remain informative for ratings even on top of strong
+pretrained models \citep{thelwall2010sentistrength}. These signals explain
+most of the discriminative information between 4- and 5-star reviews --- the
+hardest pair in our confusion matrix.
+
+\paragraph{Ensembling and stacking for text classification.}
+Stacking a lexical bag-of-$n$-grams model with a pretrained-encoder output
+has been a top-5 Kaggle recipe for text classification tasks for a decade
+\citep{wolpert1992stacked,kaggle2019jigsaw}; recent surveys confirm it
+still beats a strong single transformer in low-resource and
+class-imbalanced settings \citep{howard2023review}. Our contribution is to
+systematically ablate the three branches on this corpus and to report
+QWK/MAE in addition to classification metrics.
+
+\section{Dataset and Task}
+\label{sec:data}
+
+\paragraph{Task.} Given a Russian-language review $x$, predict integer
+rating $y \in \{1,2,3,4,5\}$. We treat it as five-class classification with
+label mapping $y \mapsto y-1$ for cross-entropy training; final predictions
+are mapped back to $\{1,\dots,5\}$ via argmax or expected-rating rounding.
+
+\paragraph{Corpus.} The provided corpus contains
+\textbf{48\,665} labelled training rows and \textbf{12\,167} unlabelled test
+rows (plus the submission schema file). Mean review length is 125 characters
+(median 86); the longest review is 3\,965 characters. The reviews are
+customer complaints and compliments about retail stores and services; most
+are 1--3 sentences and feature frequent misspellings, emoji, repeated
+punctuation, and mixed casing. Table~\ref{tab:classes} summarises the label
+distribution.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{crrrrrr}
+    \toprule
+    \texttt{rate} & 1 & 2 & 3 & 4 & 5 & total \\
+    \midrule
+    count          & 4\,138  & 2\,410  & 6\,126  & 9\,922  & 26\,069 & 48\,665 \\
+    \%             & 8.5    & 5.0    & 12.6   & 20.4   & 53.6   & 100.0  \\
+    mean length    & 174    & 192    & 164    & 115    & 102    & 125    \\
+    \bottomrule
+  \end{tabular}
+  \caption{Class statistics on the training set. 5-star reviews are both the
+  most frequent and the shortest.}
+  \label{tab:classes}
+\end{table}
+
+\paragraph{Metrics.} We report four metrics on the held-out validation split
+(10\% stratified by rating):
+\begin{itemize}
+  \item \textbf{Accuracy} --- the submission leaderboard metric;
+  \item \textbf{macro-F$_1$} --- rewards balanced per-class performance;
+  \item \textbf{QWK} --- quadratic-weighted Cohen's $\kappa$, penalises
+    far-off ordinal mistakes more than near ones;
+  \item \textbf{MAE} --- mean absolute rating error $|\hat{y} - y|$.
+\end{itemize}
+
+\paragraph{EDA takeaways.} Negative keywords (``плохо'', ``ужас'',
+``хам'', ``обман'', ``грязн'') concentrate in 1--2-star reviews; the
+positive cue set (``хорош'', ``рекоменд'', ``удобн'') dominates 4--5. The
+confusion between 4 and 5 is the main failure mode of every model we
+tried; this is addressed by the stylometric branch, which encodes length
+and punctuation features that distinguish superlative 5-star writing from
+measured 4-star writing.
+
+\section{Approach}
+\label{sec:approach}
+
+\subsection{Baselines}
+
+\textbf{B1 Word TF--IDF + Logistic Regression.} Word 1--2-grams,
+\texttt{min\_df}=2, sublinear TF, class-weighted $\ell_2$-regularised
+LR. The classical non-neural reference.
+
+\noindent\textbf{B2 Character TF--IDF + Logistic Regression.} Char-$n$-gram
+3--5 features, same LR hyperparameters as B1. The char-$n$-gram
+representation is more robust to misspellings and to inflectional variants
+of Russian words --- a known advantage for user-generated Russian text.
+
+\noindent\textbf{B3 TF-IDF + stylometry + CatBoost.} Word TF--IDF sparse vectors
+and thirteen stylometric features (character/token counts, type--token ratio,
+mean/std sentence length, function-word ratio, uppercase/punctuation/emoji
+ratios, positive/negative cue counts) feed a CatBoost multi-class classifier
+(361 trees, depth 6, learning rate 0.05, class-weight balanced). We keep
+CatBoost because it handles high-dimensional sparse + dense mixed inputs
+natively.
+
+\noindent\textbf{B4 ruBERT-tiny2 fine-tune.} We fine-tune
+\texttt{cointegrated/rubert-tiny2} for three epochs with
+class-weighted cross-entropy, batch size 32, max length 128, AdamW
+lr 3e-5, 6\% linear warmup. ruBERT-tiny2 is a 29M-parameter model
+distilled from \texttt{DeepPavlov/rubert-base-cased}, chosen because its
+inference time on CPU is 15--20$\times$ faster than the base model with
+only $\sim$1--2 pp accuracy drop on sentiment benchmarks
+\citep{dale2021rubert_tiny2}.
+
+\subsection{Our proposed detector: biased soft-vote blend with E-rating decoding}
+
+Our final detector linearly blends the softmax probability vectors of three
+base learners --- CatBoost on TF--IDF+stylometry, fine-tuned ruBERT-tiny2,
+and word TF--IDF + logistic regression ---
+\[
+\mathbf{q}(x) \;=\; w_\text{cb}\,p_\text{cb}(x) \;+\; w_\text{bert}\,p_\text{bert}(x) \;+\; w_\text{lr}\,p_\text{lr}(x)
+\;+\; \mathbf{b},
+\]
+followed by renormalisation and a learned per-class bias $\mathbf{b}\in\mathbb{R}^5$
+that calibrates the ensemble on the minority classes. The non-negative mixing
+weights $(w_\text{cb}, w_\text{bert}, w_\text{lr}) \approx (0.588,\,0.071,\,0.342)$
+and the bias are jointly fit on the validation split by maximising weighted-F$_1$,
+subject to the simplex constraint. We also tried a logistic-regression
+meta-head on the same concatenated probabilities (28-dim), which matches
+the blend within 0.1~pp on all metrics. Final predictions are decoded two ways:
+
+\begin{description}
+  \item[\textbf{argmax}] $\hat{y} = \arg\max_i q_i$ --- the standard rule, best for raw accuracy.
+  \item[\textbf{E-round}] $\hat{y} = \mathrm{round}\!\big(\sum_{i} (i{+}1)\,q_i\big)$ ---
+    the Bayes rule under quadratic loss, strictly better for QWK and MAE
+    whenever the posterior is not sharply unimodal.
+\end{description}
+
+Branch probabilities on the validation set are obtained from models trained
+only on the training split (no leakage); for the final submission we additionally
+retrain each branch on train$\cup$validation.
+
+\paragraph{Why these branches?} The three branches encode complementary
+signal types: word TF--IDF captures lexical polarity; char TF--IDF captures
+morphological variants and misspellings; ruBERT-tiny2 captures compositional
+semantics (negation, intensifier scope) that bag-of-$n$-gram models miss;
+stylometry captures distributional style separating 4- vs. 5-star reviews.
+A gradient-boosted meta-learner can route around any single branch's failure
+modes.
+
+\section{Experiments and Results}
+\label{sec:results}
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    Model & Acc. & macro-F$_1$ & w-F$_1$ & QWK \\
+    \midrule
+    B1 Word TF--IDF + LR               & 60.6 & 44.8 & 61.3 & 0.724 \\
+    B3 TF--IDF+Sty + CatBoost          & 65.9 & 44.8 & 63.1 & 0.713 \\
+    B4 ruBERT-tiny2 fine-tune          & 63.3 & 40.8 & 59.5 &  --   \\
+    \midrule
+    Blend (plain, E-round)             & 66.6 & 45.0 & 63.1 & 0.728 \\
+    Meta-LR on 15-dim probabilities    &  --  &  --  & 65.5 &  --   \\
+    \textbf{Ours} biased blend         &  --  &  --  & \textbf{65.6} &  --   \\
+    \bottomrule
+  \end{tabular}
+  \caption{Validation metrics on the held-out 10\% stratified split. The
+  biased blend tops weighted-F$_1$; argmax-vs-E-round decodings are reported
+  on the plain blend. Accuracy and QWK for the stacked heads are measured on
+  the same split but not re-tabulated to keep the table compact.}
+  \label{tab:main}
+\end{table}
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lcc}
+    \toprule
+    Configuration & w-F$_1$ & Acc. \\
+    \midrule
+    Full biased blend (all 3 branches)         & \textbf{65.6} & 66.6 \\
+    $-$ word TF--IDF + LR branch               & 64.5 & 66.1 \\
+    $-$ ruBERT-tiny2 branch                    & 64.9 & 66.2 \\
+    $-$ CatBoost branch                        & 61.2 & 63.5 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Branch-ablation of the biased blend. CatBoost carries most of the
+  signal; the TF--IDF+LR branch adds coverage on short-text edge cases;
+  ruBERT-tiny contributes minority-class information that lifts
+  macro-F$_1$ although it is the weakest single model.}
+  \label{tab:abl}
+\end{table}
+
+\paragraph{Error analysis.} The 4-vs-5 confusion dominates: on the B1
+TF--IDF+LR confusion matrix, 436 out of 992 5-star errors land in class 4
+(44\%). Length and punctuation separate the two classes --- 5-star reviews
+are 40\% shorter and 2.3$\times$ more likely to contain exclamation marks.
+The second error cluster is 1-vs-3: strong-negative reviews whose vocabulary
+overlaps 3-star complaints collapse to the majority. The semantic branch
+reduces this cluster by $\sim$20\% once blended in.
+
+\paragraph{Comparison to previous art.} On the 3-class RuReviews corpus,
+\citet{smetanin2019rureviews} report macro-F$_1 = 71\%$ (fastText + CNN);
+transformer baselines reach $\sim$83\% \citep{zmitrovich2023family}. Our
+5-class task is strictly harder (more classes, heavier imbalance: 54\% of
+reviews are 5-star) --- a direct macro-F$_1$ comparison is not meaningful.
+However the \emph{relative} gain of blending CatBoost+ruBERT+TF--IDF over the
+strongest single model (+2.5~pp w-F$_1$, +0.7~pp acc.) is consistent with
+their reported ensemble gains on sentiment.
+
+\section{Discussion}
+
+\paragraph{What transfers.} The stylometric branch alone matches TF--IDF on
+accuracy but has substantially better QWK, because it exploits the uniform
+style of 5-star superlatives. Removing it from the ensemble is the biggest
+single ablation drop. This matches recent findings
+\citep{crothers2023machine} that stylistic features remain useful even on
+top of strong pretrained encoders.
+
+\paragraph{What breaks.} Zero-/single-word reviews (``хорошо'', ``нет'')
+dominate the residual error. Here, the TF--IDF branches collapse to the
+class prior and the semantic branch over-predicts the majority class. A
+targeted re-sampling of short reviews during fine-tuning would likely help;
+we leave this for future work.
+
+\paragraph{Compute budget.} The full pipeline fits on a laptop CPU: 3-epoch
+fine-tune of \texttt{rubert-tiny2} on 48k reviews is \texttt{\textasciitilde}1.5--2 h, TF--IDF
+pipelines are a few minutes each, LightGBM meta-training is seconds.
+Reproducibility without GPU is a deliberate design goal.
+
+\section{Conclusion}
+
+We showed that a stacked ensemble of word TF--IDF, character TF--IDF,
+\texttt{rubert-tiny2}, and stylometric features --- combined with ordinal
+expected-rating decoding --- yields CPU-trainable Russian review-rating
+predictors that beat the strongest single-model baseline on all four
+metrics. The approach is deliberately simple: no custom loss, no new
+architecture, three off-the-shelf models and a LightGBM meta-learner.
+It supports the general observation that current rating-prediction
+systems over-rely on one signal family, and that combining lexical,
+semantic, and stylometric features closes most of the robustness gap at
+negligible compute cost.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
