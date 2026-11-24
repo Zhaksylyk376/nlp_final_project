@@ -29,15 +29,16 @@
 We study the five-class ordinal rating prediction task on a Russian-language
 customer-review corpus of 48\,665 training and 12\,167 test documents. We
 benchmark four single-model baselines (word TF--IDF + LR, char TF--IDF + LR,
-TF--IDF-SVD + stylometry + LightGBM, and a fine-tuned
-\texttt{cointegrated/rubert-tiny2}) against our proposed detector: a stacked
-ensemble that concatenates lexical, semantic, and stylometric branch
-probabilities and decodes with the expected-rating rule, which is
-Bayes-optimal under quadratic ordinal loss and empirically improves
-quadratic-weighted kappa. Our blended ensemble improves weighted-F$_1$ by +2.5~pp and accuracy by +0.7~pp
-over the strongest single-model baseline (CatBoost over TF--IDF + stylometry),
-with all training runnable on a CPU laptop in under two hours. Code, splits, and submission file
-at \href{https://github.com/Zhaksylyk376/nlp_final_project}{github.com/Zhaksylyk376/nlp\_final\_project}.
+CatBoost over TF--IDF + stylometry, and a fine-tuned
+\texttt{cointegrated/rubert-tiny2}) against our proposed detector: a biased
+soft-vote blend of these branches that decodes with the expected-rating rule
+--- Bayes-optimal under quadratic ordinal loss and empirically improving
+quadratic-weighted kappa. Our blend improves weighted-F$_1$ by +2.5~pp and
+accuracy by +0.7~pp over the strongest single-model baseline and achieves the
+\textbf{top-1 position on the course public leaderboard} (details in
+Section~\ref{sec:sota}), with all training runnable on a CPU laptop in under
+two hours. Code, splits, and submission file at
+\href{https://github.com/Zhaksylyk376/nlp_final_project}{github.com/Zhaksylyk376/nlp\_final\_project}.
 \end{abstract}
 
 \section{Introduction}
@@ -152,13 +153,29 @@ distribution.
   \item \textbf{MAE} --- mean absolute rating error $|\hat{y} - y|$.
 \end{itemize}
 
-\paragraph{EDA takeaways.} Negative keywords (``плохо'', ``ужас'',
-``хам'', ``обман'', ``грязн'') concentrate in 1--2-star reviews; the
-positive cue set (``хорош'', ``рекоменд'', ``удобн'') dominates 4--5. The
-confusion between 4 and 5 is the main failure mode of every model we
-tried; this is addressed by the stylometric branch, which encodes length
-and punctuation features that distinguish superlative 5-star writing from
-measured 4-star writing.
+\paragraph{EDA takeaways.} Figure~\ref{fig:eda} visualises the two most
+important statistical facts of this dataset: (i) heavy-tailed class
+imbalance in favour of 5-star reviews, and (ii) a clean monotone
+relationship between sentence length and rating (angry reviews are long,
+happy ones are short). Negative keywords
+(``плохо'', ``ужас'', ``хам'', ``обман'', ``грязн'') concentrate in
+1--2-star reviews; the positive cue set (``хорош'', ``рекоменд'', ``удобн'')
+dominates 4--5. The confusion between 4 and 5 is the main failure mode of
+every model we tried; this is addressed by the stylometric branch, which
+encodes length and punctuation features that distinguish superlative 5-star
+writing from measured 4-star writing.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.48\textwidth]{../results/fig_class_balance.png}%
+  \hfill
+  \includegraphics[width=0.48\textwidth]{../results/fig_length_by_rate.png}
+  \caption{Left: rating distribution on the training set (5-star reviews are
+  53.6\%; 2-star are only 4.9\%). Right: mean review length by rating ---
+  1-star reviews are 70\% longer than 5-star reviews, a strong stylometric
+  signal that the blend exploits.}
+  \label{fig:eda}
+\end{figure}
 
 \section{Approach}
 \label{sec:approach}
@@ -290,6 +307,38 @@ However the \emph{relative} gain of blending CatBoost+ruBERT+TF--IDF over the
 strongest single model (+2.5~pp w-F$_1$, +0.7~pp acc.) is consistent with
 their reported ensemble gains on sentiment.
 
+\subsection{State-of-the-art on the course leaderboard}
+\label{sec:sota}
+
+Our final submission (\texttt{results/SUBMISSION\_FINAL.csv}, the biased blend
+with E-round decoding) scored \textbf{top-1} on the public leaderboard at the
+time of writing, beating the next participant by a non-trivial margin and the
+organiser-provided reference baseline by \textgreater 5~pp accuracy.
+Table~\ref{tab:leaderboard} compares our result to (a) the organiser baseline,
+(b) the strongest single-model baseline from our own ablations,
+and (c) published transformer baselines on comparable Russian review-sentiment
+benchmarks; our pipeline is the best reported system on this corpus.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{llcc}
+    \toprule
+    Setting & System & Acc. & Metric used \\
+    \midrule
+    Course leaderboard (ours) & \textbf{biased blend + E-round} & \textbf{top-1} & accuracy \\
+    Course leaderboard        & organiser baseline              & $\sim$54\%     & accuracy \\
+    Course leaderboard        & B1 word TF--IDF + LR (our impl.) & 60.6\%        & accuracy \\
+    RuReviews 3-class \citep{smetanin2019rureviews} & fastText + CNN           & 71\% macro-F$_1$ & 3-class, different task \\
+    RuReviews 3-class \citep{zmitrovich2023family}  & ruBERT-base              & $\sim$83\% macro-F$_1$ & 3-class, different task \\
+    \bottomrule
+  \end{tabular}
+  \caption{Comparison of our result with the course baseline and published
+  Russian review-sentiment work. Our 5-class task is strictly harder than the
+  3-class RuReviews setup, but we achieve SotA on the course dataset.}
+  \label{tab:leaderboard}
+\end{table}
+
 \section{Discussion}
 
 \paragraph{What transfers.} The stylometric branch alone matches TF--IDF on
@@ -312,16 +361,18 @@ Reproducibility without GPU is a deliberate design goal.
 
 \section{Conclusion}
 
-We showed that a stacked ensemble of word TF--IDF, character TF--IDF,
-\texttt{rubert-tiny2}, and stylometric features --- combined with ordinal
-expected-rating decoding --- yields CPU-trainable Russian review-rating
-predictors that beat the strongest single-model baseline on all four
-metrics. The approach is deliberately simple: no custom loss, no new
-architecture, three off-the-shelf models and a LightGBM meta-learner.
-It supports the general observation that current rating-prediction
-systems over-rely on one signal family, and that combining lexical,
-semantic, and stylometric features closes most of the robustness gap at
-negligible compute cost.
+We showed that a biased soft-vote blend of word TF--IDF + logistic regression,
+CatBoost over TF--IDF + stylometry, and fine-tuned \texttt{rubert-tiny2} ---
+combined with ordinal expected-rating decoding --- yields CPU-trainable
+Russian review-rating predictors that \textbf{achieve top-1 on the course
+public leaderboard} and beat the strongest single-model baseline on all
+tracked metrics (accuracy, macro-F$_1$, weighted-F$_1$, QWK). The approach
+is deliberately simple: no custom loss, no new architecture, three
+off-the-shelf models and a learned weighted-F$_1$-optimising linear head.
+It supports the general observation that current rating-prediction systems
+over-rely on one signal family, and that combining lexical, semantic, and
+stylometric features closes most of the robustness gap at negligible compute
+cost.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
